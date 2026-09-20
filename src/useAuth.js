@@ -1,59 +1,66 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { supabase } from './supabaseClient'
 
 export function useAuth() {
   const [session, setSession] = useState(null)
   const [profile, setProfile] = useState(null)
-  const [loading, setLoading] = useState(true)
-
-  useEffect(() => {
-    supabase.auth.getSession().then(({ data }) => setSession(data.session))
-    const { data: listener } = supabase.auth.onAuthStateChange((_event, newSession) => {
-      setSession(newSession)
-    })
-    return () => listener.subscription.unsubscribe()
-  }, [])
+  // Only true for the very first load. Supabase re-confirms the session
+  // whenever the tab regains focus (its own safety behavior) — without this
+  // distinction, every tab-switch would flash the whole app back to a
+  // "Loading…" screen and unmount whatever page (and unsaved form) was open.
+  const [initializing, setInitializing] = useState(true)
+  const loadedUserId = useRef(null)
 
   useEffect(() => {
     let active = true
 
-    async function loadProfile() {
-      if (!session?.user) {
-        if (active) {
-          setProfile(null)
-          setLoading(false)
-        }
+    async function loadProfileIfNeeded(currentSession) {
+      if (!currentSession?.user) {
+        loadedUserId.current = null
+        if (active) setProfile(null)
         return
       }
-      // The on_auth_user_created trigger creates this row on first sign-in,
-      // but there can be a brief moment where it hasn't landed yet — retry once.
+      // Same user as already loaded (e.g. just a background token refresh) —
+      // nothing to do, and importantly, nothing to re-render around.
+      if (loadedUserId.current === currentSession.user.id) return
+
+      loadedUserId.current = currentSession.user.id
       let { data, error } = await supabase
         .from('profiles')
         .select('*')
-        .eq('id', session.user.id)
+        .eq('id', currentSession.user.id)
         .single()
 
       if (error) {
+        // The on_auth_user_created trigger may not have landed yet on a brand-new sign-in.
         await new Promise((r) => setTimeout(r, 700))
         ;({ data, error } = await supabase
           .from('profiles')
           .select('*')
-          .eq('id', session.user.id)
+          .eq('id', currentSession.user.id)
           .single())
       }
-
-      if (active) {
-        setProfile(error ? null : data)
-        setLoading(false)
-      }
+      if (active) setProfile(error ? null : data)
     }
 
-    setLoading(true)
-    loadProfile()
+    supabase.auth.getSession().then(async ({ data }) => {
+      if (!active) return
+      setSession(data.session)
+      await loadProfileIfNeeded(data.session)
+      if (active) setInitializing(false)
+    })
+
+    const { data: listener } = supabase.auth.onAuthStateChange(async (_event, newSession) => {
+      if (!active) return
+      setSession(newSession)
+      await loadProfileIfNeeded(newSession)
+    })
+
     return () => {
       active = false
+      listener.subscription.unsubscribe()
     }
-  }, [session])
+  }, [])
 
-  return { session, profile, loading }
+  return { session, profile, loading: initializing }
 }
