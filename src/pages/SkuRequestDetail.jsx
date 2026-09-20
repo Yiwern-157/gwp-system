@@ -43,6 +43,8 @@ export default function SkuRequestDetail({ profile, isNew }) {
   const [platforms, setPlatforms] = useState([])
   const [rejectReason, setRejectReason] = useState('')
   const [showRejectBox, setShowRejectBox] = useState(false)
+  const [cancelReason, setCancelReason] = useState('')
+  const [showCancelBox, setShowCancelBox] = useState(false)
   const [saving, setSaving] = useState(false)
 
   const isComOps = profile?.role === 'ComOps' || profile?.role === 'Admin'
@@ -172,7 +174,33 @@ export default function SkuRequestDetail({ profile, isNew }) {
     await load()
   }
 
+  async function handleDelete() {
+    if (!window.confirm('Delete this request? DSP has not processed it yet, so this removes it completely.')) return
+    await supabase.from('sku_barcode_request_history').delete().eq('request_id', id)
+    await supabase.from('sku_barcode_request').delete().eq('id', id)
+    navigate('/sku-requests')
+  }
+
+  async function handleCancel() {
+    if (!cancelReason.trim()) {
+      alert('A reason is required to cancel.')
+      return
+    }
+    await supabase.from('sku_barcode_request').update({ approval_status: 'Canceled' }).eq('id', id)
+    await supabase.from('sku_barcode_request_history').insert({
+      request_id: id,
+      action: 'Canceled',
+      actor_id: profile?.id,
+      reason: cancelReason,
+    })
+    setCancelReason('')
+    setShowCancelBox(false)
+    await load()
+  }
+
   const visibleHistory = showAllHistory ? history : history.slice(0, 1)
+  const dspHasProcessed = record && record.approval_status !== 'Pending Review'
+  const selectedTypeDesc = types.find((t) => t.code === form.sku_status_type)?.description
 
   return (
     <div className="detail-card">
@@ -202,6 +230,29 @@ export default function SkuRequestDetail({ profile, isNew }) {
           <textarea value={rejectReason} onChange={(e) => setRejectReason(e.target.value)} />
           <button className="btn btn-danger" onClick={handleReject}>
             Confirm reject
+          </button>
+        </div>
+      )}
+
+      {!isNew && isComOps && form.approval_status !== 'Canceled' && (
+        <div className="action-row">
+          {!dspHasProcessed ? (
+            <button className="btn btn-danger" onClick={handleDelete}>
+              Delete
+            </button>
+          ) : (
+            <button className="btn btn-danger" onClick={() => setShowCancelBox((v) => !v)}>
+              Cancel this request
+            </button>
+          )}
+        </div>
+      )}
+      {showCancelBox && (
+        <div className="reason-box">
+          <div className="reason-label">Reason for canceling (required)</div>
+          <textarea value={cancelReason} onChange={(e) => setCancelReason(e.target.value)} />
+          <button className="btn btn-danger" onClick={handleCancel}>
+            Confirm cancel
           </button>
         </div>
       )}
@@ -243,13 +294,18 @@ export default function SkuRequestDetail({ profile, isNew }) {
           >
             <option value="">SKU status type</option>
             {types.map((t) => (
-              <option key={t.code} value={t.code}>
+              <option key={t.code} value={t.code} title={t.description}>
                 {t.label}
               </option>
             ))}
           </select>
           {record && <span className="hint-inline">SLA: {record.submission_type} (auto)</span>}
         </div>
+        {selectedTypeDesc && (
+          <div className="hint" style={{ marginTop: '-4px', marginBottom: '8px' }}>
+            {selectedTypeDesc}
+          </div>
+        )}
         <input
           placeholder="Item description"
           value={form.item_description || ''}
@@ -287,25 +343,9 @@ export default function SkuRequestDetail({ profile, isNew }) {
         </div>
       </fieldset>
 
-      <fieldset disabled={!(isComOps || isDSP)} className="section">
-        <legend>3. Listing</legend>
-        <div className="grid">
-          <input
-            placeholder="Listing link"
-            value={form.listing_link || ''}
-            onChange={(e) => update('listing_link', e.target.value)}
-          />
-          <input
-            placeholder="Listing status"
-            value={form.listing_status || ''}
-            onChange={(e) => update('listing_status', e.target.value)}
-          />
-        </div>
-      </fieldset>
-
       <fieldset disabled={!isWarehouse} className="section">
         <legend>
-          4. L&amp;W stock prep <span className="role-tag">Warehouse</span>
+          3. L&amp;W stock prep <span className="role-tag">Warehouse</span>
         </legend>
         <div className="grid">
           <input
@@ -321,6 +361,24 @@ export default function SkuRequestDetail({ profile, isNew }) {
           {record && (
             <span className="hint-inline">ETA: {record.estimated_inbound_date || '—'} (auto)</span>
           )}
+        </div>
+      </fieldset>
+
+      <fieldset disabled={!(isComOps || isDSP)} className="section">
+        <legend>
+          4. Listing <span className="role-tag">optional</span>
+        </legend>
+        <div className="grid">
+          <input
+            placeholder="Listing link"
+            value={form.listing_link || ''}
+            onChange={(e) => update('listing_link', e.target.value)}
+          />
+          <input
+            placeholder="Listing status"
+            value={form.listing_status || ''}
+            onChange={(e) => update('listing_status', e.target.value)}
+          />
         </div>
       </fieldset>
 
@@ -345,7 +403,7 @@ export default function SkuRequestDetail({ profile, isNew }) {
 
       <div className="action-row" style={{ justifyContent: 'flex-end' }}>
         <button className="btn" onClick={() => navigate('/sku-requests')}>
-          Cancel
+          Back
         </button>
         <button className="btn btn-accent" disabled={saving} onClick={handleSave}>
           {isNew ? 'Submit request' : 'Save changes'}

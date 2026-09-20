@@ -13,6 +13,8 @@ export default function ReferenceList() {
   const [newRow, setNewRow] = useState(emptyRow)
   const [editingId, setEditingId] = useState(null)
   const [editRow, setEditRow] = useState(emptyRow)
+  const [selected, setSelected] = useState(new Set())
+  const [batchSeason, setBatchSeason] = useState('')
 
   useEffect(() => {
     load()
@@ -32,6 +34,23 @@ export default function ReferenceList() {
     if (statusFilter && r.status !== statusFilter) return false
     return true
   })
+
+  function toggleSelect(id) {
+    setSelected((s) => {
+      const next = new Set(s)
+      if (next.has(id)) next.delete(id)
+      else next.add(id)
+      return next
+    })
+  }
+
+  function toggleSelectAllVisible() {
+    setSelected((s) => {
+      const allVisible = filtered.every((r) => s.has(r.id))
+      if (allVisible) return new Set()
+      return new Set(filtered.map((r) => r.id))
+    })
+  }
 
   async function handleAdd() {
     if (!newRow.sku_code || !newRow.item_name) {
@@ -70,6 +89,26 @@ export default function ReferenceList() {
     }
   }
 
+  async function batchSetStatus(status) {
+    const ids = Array.from(selected)
+    if (ids.length === 0) return
+    await supabase.from('reference').update({ status }).in('id', ids)
+    setSelected(new Set())
+    load()
+  }
+
+  async function batchSetSeason() {
+    const ids = Array.from(selected)
+    if (ids.length === 0 || !batchSeason) return
+    await supabase
+      .from('reference')
+      .update({ season: batchSeason === 'clear' ? null : batchSeason })
+      .in('id', ids)
+    setSelected(new Set())
+    setBatchSeason('')
+    load()
+  }
+
   return (
     <div>
       <h1>Reference — Master SKU list</h1>
@@ -93,6 +132,32 @@ export default function ReferenceList() {
           + Add SKU
         </button>
       </div>
+
+      {selected.size > 0 && (
+        <div className="detail-card" style={{ marginBottom: '1rem', background: 'var(--accent-bg)' }}>
+          <div className="action-row" style={{ marginBottom: 0 }}>
+            <span style={{ fontSize: '13px', fontWeight: 500 }}>{selected.size} selected</span>
+            <select value={batchSeason} onChange={(e) => setBatchSeason(e.target.value)}>
+              <option value="">Set season to…</option>
+              <option value="Jan-Jun">Jan-Jun</option>
+              <option value="Nov-Mar">Nov-Mar</option>
+              <option value="clear">(clear)</option>
+            </select>
+            <button className="btn" onClick={batchSetSeason}>
+              Apply season
+            </button>
+            <button className="btn btn-success" onClick={() => batchSetStatus('active')}>
+              Activate selected
+            </button>
+            <button className="btn btn-danger" onClick={() => batchSetStatus('inactive')}>
+              Deactivate selected
+            </button>
+            <button className="btn btn-ghost" onClick={() => setSelected(new Set())}>
+              Clear selection
+            </button>
+          </div>
+        </div>
+      )}
 
       {adding && (
         <div className="detail-card" style={{ marginBottom: '1rem' }}>
@@ -133,6 +198,13 @@ export default function ReferenceList() {
         <table className="data-table">
           <thead>
             <tr>
+              <th style={{ width: '28px' }}>
+                <input
+                  type="checkbox"
+                  checked={filtered.length > 0 && filtered.every((r) => selected.has(r.id))}
+                  onChange={toggleSelectAllVisible}
+                />
+              </th>
               <th>SKU code</th>
               <th>Item name</th>
               <th>Season</th>
@@ -144,6 +216,7 @@ export default function ReferenceList() {
             {filtered.map((r) =>
               editingId === r.id ? (
                 <tr key={r.id}>
+                  <td></td>
                   <td className="mono">{r.sku_code}</td>
                   <td>
                     <input
@@ -181,6 +254,13 @@ export default function ReferenceList() {
                 </tr>
               ) : (
                 <tr key={r.id}>
+                  <td onClick={(e) => e.stopPropagation()}>
+                    <input
+                      type="checkbox"
+                      checked={selected.has(r.id)}
+                      onChange={() => toggleSelect(r.id)}
+                    />
+                  </td>
                   <td className="mono">{r.sku_code}</td>
                   <td>{r.item_name}</td>
                   <td>{r.season || '—'}</td>
@@ -199,7 +279,7 @@ export default function ReferenceList() {
             )}
             {filtered.length === 0 && (
               <tr>
-                <td colSpan={5} className="text-muted">
+                <td colSpan={6} className="text-muted">
                   No SKUs yet.
                 </td>
               </tr>

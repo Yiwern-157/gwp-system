@@ -2,6 +2,7 @@ export const APPROVAL_COLORS = {
   'Pending Review': { bg: 'var(--warning-bg)', color: 'var(--warning)' },
   Approved: { bg: 'var(--success-bg)', color: 'var(--success)' },
   Rejected: { bg: 'var(--danger-bg)', color: 'var(--danger)' },
+  Canceled: { bg: 'var(--surface-2)', color: 'var(--text-muted)' },
 }
 
 export const SLA_COLORS = {

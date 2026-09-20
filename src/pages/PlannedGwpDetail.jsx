@@ -11,6 +11,8 @@ const emptyHeader = {
   tier: '',
   promo_start_date: '',
   promo_end_date: '',
+  stock_prep_date: '',
+  stock_prep_note: '',
   remarks: '',
 }
 
@@ -32,6 +34,12 @@ export default function PlannedGwpDetail({ profile, isNew }) {
   const [addingLine, setAddingLine] = useState(false)
   const [newLine, setNewLine] = useState(emptyLine)
   const [saving, setSaving] = useState(false)
+  const [cancelReason, setCancelReason] = useState('')
+  const [showCancelBox, setShowCancelBox] = useState(false)
+
+  const isComOps = profile?.role === 'ComOps' || profile?.role === 'Admin'
+  const isDSPorWarehouse =
+    profile?.role === 'DSP' || profile?.role === 'Warehouse' || profile?.role === 'Admin'
 
   useEffect(() => {
     fetchPicklist('planned_gwp_type').then(setTypes).catch(console.error)
@@ -76,9 +84,8 @@ export default function PlannedGwpDetail({ profile, isNew }) {
     const payload = { ...header }
     delete payload.id
     delete payload.reference_no
-    delete payload.stock_prep_date
     delete payload.created_at
-    ;['promo_start_date', 'promo_end_date'].forEach((f) => {
+    ;['promo_start_date', 'promo_end_date', 'stock_prep_date'].forEach((f) => {
       if (payload[f] === '') payload[f] = null
     })
     payload.requestor_id = payload.requestor_id || profile?.id
@@ -151,6 +158,39 @@ export default function PlannedGwpDetail({ profile, isNew }) {
     }
   }
 
+  const dspHasProcessed = lines.some((l) => l.stock_status !== 'Pending')
+
+  async function handleDelete() {
+    if (
+      !window.confirm(
+        'Delete this request and all its SKU lines? DSP has not processed any line yet, so this removes everything completely.'
+      )
+    )
+      return
+    const lineIds = lines.map((l) => l.id)
+    if (lineIds.length) {
+      await supabase.from('planned_gwp_bundling_line_history').delete().in('line_id', lineIds)
+      await supabase.from('planned_gwp_bundling_lines').delete().eq('request_id', id)
+    }
+    await supabase.from('planned_gwp_bundling').delete().eq('id', id)
+    navigate('/planned-gwp')
+  }
+
+  async function handleCancelRequest() {
+    if (!cancelReason.trim()) {
+      alert('A reason is required to cancel.')
+      return
+    }
+    const notedRemarks = `${header.remarks || ''}\n\n[Canceled by ${profile?.full_name || profile?.email}] ${cancelReason}`.trim()
+    await supabase
+      .from('planned_gwp_bundling')
+      .update({ status: 'Canceled', remarks: notedRemarks })
+      .eq('id', id)
+    setCancelReason('')
+    setShowCancelBox(false)
+    await load()
+  }
+
   const stockColors = {
     Confirmed: { bg: 'var(--success-bg)', color: 'var(--success)' },
     'With Issue': { bg: 'var(--warning-bg)', color: 'var(--warning)' },
@@ -158,17 +198,47 @@ export default function PlannedGwpDetail({ profile, isNew }) {
     Pending: { bg: 'var(--surface-2)', color: 'var(--text-secondary)' },
   }
 
+  const selectedTypeDesc = types.find((t) => t.code === header.type)?.description
+
   return (
     <div className="detail-card">
       {!isNew && record && (
         <div className="detail-header">
           <h2 className="mono">{record.reference_no}</h2>
+          {record.status === 'Canceled' && (
+            <span className="badge" style={{ background: 'var(--surface-2)', color: 'var(--text-muted)' }}>
+              Canceled
+            </span>
+          )}
         </div>
       )}
       {preset?.presetIsku && isNew && (
         <p className="hint">
           Planning next use of {preset.presetQtySets} leftover sets of {preset.presetIsku}.
         </p>
+      )}
+
+      {!isNew && isComOps && record?.status !== 'Canceled' && (
+        <div className="action-row">
+          {!dspHasProcessed ? (
+            <button className="btn btn-danger" onClick={handleDelete}>
+              Delete
+            </button>
+          ) : (
+            <button className="btn btn-danger" onClick={() => setShowCancelBox((v) => !v)}>
+              Cancel this request
+            </button>
+          )}
+        </div>
+      )}
+      {showCancelBox && (
+        <div className="reason-box">
+          <div className="reason-label">Reason for canceling (required)</div>
+          <textarea value={cancelReason} onChange={(e) => setCancelReason(e.target.value)} />
+          <button className="btn btn-danger" onClick={handleCancelRequest}>
+            Confirm cancel
+          </button>
+        </div>
       )}
 
       <fieldset className="section">
@@ -179,7 +249,7 @@ export default function PlannedGwpDetail({ profile, isNew }) {
           <select value={header.type || ''} onChange={(e) => updateHeader('type', e.target.value)}>
             <option value="">Type</option>
             {types.map((t) => (
-              <option key={t.code} value={t.code}>
+              <option key={t.code} value={t.code} title={t.description}>
                 {t.label}
               </option>
             ))}
@@ -198,7 +268,6 @@ export default function PlannedGwpDetail({ profile, isNew }) {
           <select
             value={header.campaign_tag || ''}
             onChange={(e) => updateHeader('campaign_tag', e.target.value)}
-            title={tags.find((t) => t.code === header.campaign_tag)?.description || ''}
           >
             <option value="">Campaign tag</option>
             {tags.map((t) => (
@@ -234,10 +303,12 @@ export default function PlannedGwpDetail({ profile, isNew }) {
             value={header.promo_end_date || ''}
             onChange={(e) => updateHeader('promo_end_date', e.target.value)}
           />
-          {record && (
-            <span className="hint-inline">Stock prep date: {record.stock_prep_date || '—'} (auto)</span>
-          )}
         </div>
+        {selectedTypeDesc && (
+          <div className="hint" style={{ marginTop: '-4px', marginBottom: '8px' }}>
+            {selectedTypeDesc}
+          </div>
+        )}
         <textarea
           placeholder="Remarks (optional notes for DSP / Warehouse)"
           value={header.remarks || ''}
@@ -245,9 +316,34 @@ export default function PlannedGwpDetail({ profile, isNew }) {
         />
       </fieldset>
 
+      <fieldset disabled={!isDSPorWarehouse} className="section">
+        <legend>
+          Stock prep scheduling <span className="role-tag">DSP / Warehouse / Logistics</span>
+        </legend>
+        <div className="grid">
+          <div>
+            <div className="hint-inline">Stock prep date</div>
+            <input
+              type="date"
+              value={header.stock_prep_date || ''}
+              onChange={(e) => updateHeader('stock_prep_date', e.target.value)}
+            />
+          </div>
+        </div>
+        <div className="hint" style={{ marginBottom: '8px' }}>
+          Pre-filled as a suggestion from country/platform/type lead time — override it if the
+          warehouse inbound schedule or a shipment delay changes the real date.
+        </div>
+        <textarea
+          placeholder="Note — why this date changed from the suggestion, if it did"
+          value={header.stock_prep_note || ''}
+          onChange={(e) => updateHeader('stock_prep_note', e.target.value)}
+        />
+      </fieldset>
+
       <div className="action-row" style={{ justifyContent: 'flex-end' }}>
         <button className="btn" onClick={() => navigate('/planned-gwp')}>
-          Cancel
+          Back
         </button>
         <button className="btn btn-accent" disabled={saving} onClick={handleSaveHeader}>
           {isNew ? 'Create request' : 'Save changes'}
@@ -304,34 +400,47 @@ export default function PlannedGwpDetail({ profile, isNew }) {
           {addingLine ? (
             <div className="detail-card" style={{ marginTop: '10px' }}>
               <div className="grid">
-                <select
-                  value={newLine.isku}
-                  onChange={(e) => setNewLine((l) => ({ ...l, isku: e.target.value }))}
-                >
-                  <option value="">ISKU</option>
-                  {references.map((r) => (
-                    <option key={r.sku_code} value={r.sku_code}>
-                      {r.sku_code} — {r.item_name}
-                    </option>
-                  ))}
-                </select>
-                <input
-                  value={references.find((r) => r.sku_code === newLine.isku)?.item_name || ''}
-                  disabled
-                  placeholder="Item description (auto)"
-                />
-                <input
-                  type="number"
-                  placeholder="Qty per set"
-                  value={newLine.qty_per_set}
-                  onChange={(e) => setNewLine((l) => ({ ...l, qty_per_set: e.target.value }))}
-                />
-                <input
-                  type="number"
-                  placeholder="Requested qty (sets)"
-                  value={newLine.requested_qty_sets}
-                  onChange={(e) => setNewLine((l) => ({ ...l, requested_qty_sets: e.target.value }))}
-                />
+                <div>
+                  <div className="hint-inline">ISKU (type to search)</div>
+                  <input
+                    list="reference-options"
+                    value={newLine.isku}
+                    placeholder="Search SKU code or name…"
+                    onChange={(e) => setNewLine((l) => ({ ...l, isku: e.target.value }))}
+                  />
+                  <datalist id="reference-options">
+                    {references.map((r) => (
+                      <option key={r.sku_code} value={r.sku_code}>
+                        {r.sku_code} — {r.item_name}
+                      </option>
+                    ))}
+                  </datalist>
+                </div>
+                <div>
+                  <div className="hint-inline">Item description (auto)</div>
+                  <input
+                    value={references.find((r) => r.sku_code === newLine.isku)?.item_name || ''}
+                    disabled
+                  />
+                </div>
+                <div>
+                  <div className="hint-inline">Qty per set</div>
+                  <input
+                    type="number"
+                    value={newLine.qty_per_set}
+                    onChange={(e) => setNewLine((l) => ({ ...l, qty_per_set: e.target.value }))}
+                  />
+                </div>
+                <div>
+                  <div className="hint-inline">Requested qty (sets)</div>
+                  <input
+                    type="number"
+                    value={newLine.requested_qty_sets}
+                    onChange={(e) =>
+                      setNewLine((l) => ({ ...l, requested_qty_sets: e.target.value }))
+                    }
+                  />
+                </div>
               </div>
               <div className="action-row" style={{ justifyContent: 'flex-end' }}>
                 <button className="btn" onClick={() => setAddingLine(false)}>

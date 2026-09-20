@@ -27,7 +27,9 @@ export default function PlannedGwpList() {
     setLoading(false)
   }
 
-  function lineSummary(lines) {
+  function lineSummary(row) {
+    if (row.status === 'Canceled') return { text: 'Canceled', tone: 'muted' }
+    const lines = row.planned_gwp_bundling_lines
     if (!lines || lines.length === 0) return { text: 'No lines yet', tone: 'muted' }
     const withIssue = lines.filter((l) => l.stock_status === 'With Issue').length
     if (withIssue > 0) return { text: `${withIssue} of ${lines.length} with issue`, tone: 'warning' }
@@ -76,7 +78,7 @@ export default function PlannedGwpList() {
           </thead>
           <tbody>
             {filtered.map((r) => {
-              const s = lineSummary(r.planned_gwp_bundling_lines)
+              const s = lineSummary(r)
               return (
                 <tr key={r.id} onClick={() => navigate(`/planned-gwp/${r.id}`)}>
                   <td className="mono">{r.reference_no}</td>

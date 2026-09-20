@@ -52,6 +52,7 @@ export default function SkuRequestList() {
           <option value="Pending Review">Pending Review</option>
           <option value="Approved">Approved</option>
           <option value="Rejected">Rejected</option>
+          <option value="Canceled">Canceled</option>
         </select>
         <select value={countryFilter} onChange={(e) => setCountryFilter(e.target.value)}>
           <option value="">Country: All</option>
