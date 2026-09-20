@@ -8,6 +8,7 @@ export default function PlannedGwpLineDetail({ profile }) {
 
   const [line, setLine] = useState(null)
   const [form, setForm] = useState({})
+  const [references, setReferences] = useState([])
   const [history, setHistory] = useState([])
   const [showAllHistory, setShowAllHistory] = useState(false)
   const [reason, setReason] = useState('')
@@ -21,6 +22,12 @@ export default function PlannedGwpLineDetail({ profile }) {
 
   useEffect(() => {
     load()
+    supabase
+      .from('reference')
+      .select('sku_code, item_name')
+      .eq('status', 'active')
+      .order('sku_code')
+      .then(({ data }) => setReferences(data || []))
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [lineId])
 
@@ -51,7 +58,6 @@ export default function PlannedGwpLineDetail({ profile }) {
     ;[
       'id',
       'request_id',
-      'isku',
       'conversion_pc',
       'actual_conversion_pc',
       'variance_pc',
@@ -152,6 +158,53 @@ export default function PlannedGwpLineDetail({ profile }) {
           {line.stock_status}
         </span>
       </div>
+
+      <fieldset disabled={!isComOps} className="section">
+        <legend>
+          Basic info <span className="role-tag">ComOps</span>
+        </legend>
+        <div className="grid">
+          <div>
+            <div className="hint-inline">ISKU (type to search)</div>
+            <input
+              list="reference-options"
+              value={form.isku || ''}
+              onChange={(e) => update('isku', e.target.value)}
+            />
+            <datalist id="reference-options">
+              {references.map((r) => (
+                <option key={r.sku_code} value={r.sku_code}>
+                  {r.sku_code} — {r.item_name}
+                </option>
+              ))}
+            </datalist>
+          </div>
+          <div>
+            <div className="hint-inline">Item description (auto)</div>
+            <input
+              value={references.find((r) => r.sku_code === form.isku)?.item_name || ''}
+              disabled
+            />
+          </div>
+          <div>
+            <div className="hint-inline">Sachets/pieces per box (1 if not divisible)</div>
+            <input
+              type="number"
+              value={form.qty_per_set ?? ''}
+              onChange={(e) => update('qty_per_set', e.target.value)}
+            />
+          </div>
+          <div>
+            <div className="hint-inline">Requested qty (boxes/sets)</div>
+            <input
+              type="number"
+              value={form.requested_qty_sets ?? ''}
+              onChange={(e) => update('requested_qty_sets', e.target.value)}
+            />
+          </div>
+          <span className="hint-inline">Total pieces for DSP/Warehouse: {line.conversion_pc ?? '—'} (auto)</span>
+        </div>
+      </fieldset>
 
       <fieldset disabled={!isDSP} className="section">
         <legend>

@@ -346,38 +346,15 @@ export default function PlannedGwpDetail({ profile, isNew }) {
         />
       </fieldset>
 
-      <fieldset disabled={!isDSPorWarehouse} className="section">
-        <legend>
-          Stock prep scheduling <span className="role-tag">DSP / Warehouse / Logistics</span>
-        </legend>
-        <div className="grid">
-          <div>
-            <div className="hint-inline">Stock prep date</div>
-            <input
-              type="date"
-              value={header.stock_prep_date || ''}
-              onChange={(e) => updateHeader('stock_prep_date', e.target.value)}
-            />
-          </div>
-        </div>
-        <div className="hint" style={{ marginBottom: '8px' }}>
-          Pre-filled as a suggestion from country/platform/type lead time — override it if the
-          warehouse inbound schedule or a shipment delay changes the real date.
-        </div>
-        <textarea
-          placeholder="Note — why this date changed from the suggestion, if it did"
-          value={header.stock_prep_note || ''}
-          onChange={(e) => updateHeader('stock_prep_note', e.target.value)}
-        />
-      </fieldset>
-
       <h3 style={{ marginTop: '1.5rem' }}>SKU lines in this request</h3>
       <table className="data-table">
         <thead>
           <tr>
             <th>ISKU</th>
             <th>Item description</th>
+            <th>Qty/set</th>
             <th>Requested</th>
+            <th>Total pcs</th>
             <th>Stock status</th>
             <th>Unused</th>
             <th></th>
@@ -392,7 +369,12 @@ export default function PlannedGwpDetail({ profile, isNew }) {
             >
               <td className="mono">{l.isku}</td>
               <td>{references.find((r) => r.sku_code === l.isku)?.item_name || '—'}</td>
+              <td>{l.qty_per_set}</td>
               <td>{l.requested_qty_sets} sets</td>
+              <td>
+                {l.conversion_pc ?? (Number(l.qty_per_set) || 0) * (Number(l.requested_qty_sets) || 0)}{' '}
+                pcs
+              </td>
               <td>
                 <span
                   className="badge"
@@ -424,7 +406,7 @@ export default function PlannedGwpDetail({ profile, isNew }) {
           ))}
           {displayLines.length === 0 && (
             <tr>
-              <td colSpan={6} className="text-muted">
+              <td colSpan={8} className="text-muted">
                 No SKU lines yet.
               </td>
             </tr>
@@ -459,7 +441,7 @@ export default function PlannedGwpDetail({ profile, isNew }) {
               />
             </div>
             <div>
-              <div className="hint-inline">Qty per set</div>
+              <div className="hint-inline">Sachets/pieces per box (1 if not divisible)</div>
               <input
                 type="number"
                 value={newLine.qty_per_set}
@@ -467,7 +449,7 @@ export default function PlannedGwpDetail({ profile, isNew }) {
               />
             </div>
             <div>
-              <div className="hint-inline">Requested qty (sets)</div>
+              <div className="hint-inline">Requested qty (boxes/sets)</div>
               <input
                 type="number"
                 value={newLine.requested_qty_sets}
@@ -476,6 +458,11 @@ export default function PlannedGwpDetail({ profile, isNew }) {
                 }
               />
             </div>
+          </div>
+          <div className="hint" style={{ marginBottom: '8px' }}>
+            {(Number(newLine.qty_per_set) || 0) * (Number(newLine.requested_qty_sets) || 0)} total
+            pieces for DSP/Warehouse to prepare — use 1 sachet/piece per box for products that
+            aren't split (a box is a box, a bottle is a bottle).
           </div>
           <div className="action-row" style={{ justifyContent: 'flex-end' }}>
             <button className="btn" onClick={() => setAddingLine(false)}>
@@ -491,6 +478,31 @@ export default function PlannedGwpDetail({ profile, isNew }) {
           + Add SKU line
         </button>
       )}
+
+      <fieldset disabled={!isDSPorWarehouse} className="section" style={{ marginTop: '1.5rem' }}>
+        <legend>
+          Stock prep scheduling <span className="role-tag">DSP / Warehouse / Logistics</span>
+        </legend>
+        <div className="grid">
+          <div>
+            <div className="hint-inline">Stock prep date</div>
+            <input
+              type="date"
+              value={header.stock_prep_date || ''}
+              onChange={(e) => updateHeader('stock_prep_date', e.target.value)}
+            />
+          </div>
+        </div>
+        <div className="hint" style={{ marginBottom: '8px' }}>
+          Pre-filled as a suggestion from country/platform/type lead time — override it if the
+          warehouse inbound schedule or a shipment delay changes the real date.
+        </div>
+        <textarea
+          placeholder="Note — why this date changed from the suggestion, if it did"
+          value={header.stock_prep_note || ''}
+          onChange={(e) => updateHeader('stock_prep_note', e.target.value)}
+        />
+      </fieldset>
 
       <div className="action-row" style={{ justifyContent: 'flex-end', marginTop: '1.5rem' }}>
         <button className="btn" onClick={() => navigate('/planned-gwp')}>
