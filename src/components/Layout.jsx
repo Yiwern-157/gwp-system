@@ -16,7 +16,13 @@ export default function Layout({ profile, children }) {
           GWP System
         </Link>
         <nav className="topnav">
-          <Link to="/sku-requests">SKU &amp; Barcode Request</Link>
+          <Link to="/sku-requests">SKU Request</Link>
+          <Link to="/planned-gwp">Planned GWP</Link>
+          <Link to="/leftover-stock">Leftover Stock</Link>
+          <Link to="/forecast-gwp">Forecast GWP</Link>
+          <Link to="/analysis">Analysis</Link>
+          <Link to="/reference">Reference</Link>
+          {profile?.role === 'Admin' && <Link to="/admin">Admin</Link>}
         </nav>
         <div className="user-chip">
           <span>
