@@ -211,6 +211,93 @@ function PicklistsTab() {
   )
 }
 
+const COUNTRIES = ['AU', 'MY', 'PH', 'SG', 'US']
+const PLATFORMS = ['ALL', 'LZD', 'RTL', 'SHP', 'SPY', 'SPY SUBS', 'TTS']
+const ROLES = ['ComOps', 'DSP', 'Warehouse', 'Admin']
+
+function ManageUsersTab() {
+  const [profiles, setProfiles] = useState([])
+  const [loading, setLoading] = useState(true)
+
+  useEffect(() => {
+    load()
+  }, [])
+
+  async function load() {
+    setLoading(true)
+    const { data, error } = await supabase.from('profiles').select('*').order('full_name')
+    if (!error) setProfiles(data)
+    setLoading(false)
+  }
+
+  async function updateRole(id, role) {
+    await supabase.from('profiles').update({ role }).eq('id', id)
+    load()
+  }
+
+  async function toggleTag(row, field, value) {
+    const current = row[field] || []
+    const next = current.includes(value) ? current.filter((v) => v !== value) : [...current, value]
+    await supabase.from('profiles').update({ [field]: next }).eq('id', row.id)
+    load()
+  }
+
+  if (loading) return <p>Loading…</p>
+
+  return (
+    <div>
+      <p className="hint">
+        Any number of people can be Admin — an Admin can change anyone's role, including making
+        someone else Admin. Country/platform tags are informational (everyone can still see every
+        country); they just say who's the PIC for filtering and the Analysis dashboard.
+      </p>
+      {profiles.map((p) => (
+        <div key={p.id} className="detail-card" style={{ marginBottom: '10px' }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', flexWrap: 'wrap', gap: '10px' }}>
+            <div>
+              <div style={{ fontWeight: 500 }}>{p.full_name || p.email}</div>
+              <div className="text-muted" style={{ fontSize: '12px' }}>{p.email}</div>
+            </div>
+            <select value={p.role} onChange={(e) => updateRole(p.id, e.target.value)}>
+              {ROLES.map((r) => (
+                <option key={r} value={r}>
+                  {r}
+                </option>
+              ))}
+            </select>
+          </div>
+          <div style={{ marginTop: '10px', fontSize: '12px' }}>
+            <div className="hint-inline" style={{ marginBottom: '4px' }}>Countries this PIC covers</div>
+            {COUNTRIES.map((c) => (
+              <label key={c} style={{ marginRight: '10px' }}>
+                <input
+                  type="checkbox"
+                  checked={(p.assigned_countries || []).includes(c)}
+                  onChange={() => toggleTag(p, 'assigned_countries', c)}
+                />{' '}
+                {c}
+              </label>
+            ))}
+          </div>
+          <div style={{ marginTop: '8px', fontSize: '12px' }}>
+            <div className="hint-inline" style={{ marginBottom: '4px' }}>Platforms this PIC covers</div>
+            {PLATFORMS.map((pl) => (
+              <label key={pl} style={{ marginRight: '10px' }}>
+                <input
+                  type="checkbox"
+                  checked={(p.assigned_platforms || []).includes(pl)}
+                  onChange={() => toggleTag(p, 'assigned_platforms', pl)}
+                />{' '}
+                {pl}
+              </label>
+            ))}
+          </div>
+        </div>
+      ))}
+    </div>
+  )
+}
+
 export default function AdminPage({ profile }) {
   const [tab, setTab] = useState('log')
 
@@ -236,8 +323,13 @@ export default function AdminPage({ profile }) {
         >
           Manage Dropdown Lists
         </button>
+        <button className={`btn ${tab === 'users' ? 'btn-accent' : ''}`} onClick={() => setTab('users')}>
+          Manage Users
+        </button>
       </div>
-      {tab === 'log' ? <ActivityLogTab /> : <PicklistsTab />}
+      {tab === 'log' && <ActivityLogTab />}
+      {tab === 'lists' && <PicklistsTab />}
+      {tab === 'users' && <ManageUsersTab />}
     </div>
   )
 }

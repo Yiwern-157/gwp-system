@@ -261,6 +261,7 @@ export default function PlannedGwpDetail({ profile, isNew }) {
             <thead>
               <tr>
                 <th>ISKU</th>
+                <th>Item description</th>
                 <th>Requested</th>
                 <th>Stock status</th>
                 <th>Unused</th>
@@ -271,6 +272,7 @@ export default function PlannedGwpDetail({ profile, isNew }) {
               {lines.map((l) => (
                 <tr key={l.id} onClick={() => navigate(`/planned-gwp/${id}/lines/${l.id}`)}>
                   <td className="mono">{l.isku}</td>
+                  <td>{references.find((r) => r.sku_code === l.isku)?.item_name || '—'}</td>
                   <td>{l.requested_qty_sets} sets</td>
                   <td>
                     <span
@@ -291,7 +293,7 @@ export default function PlannedGwpDetail({ profile, isNew }) {
               ))}
               {lines.length === 0 && (
                 <tr>
-                  <td colSpan={5} className="text-muted">
+                  <td colSpan={6} className="text-muted">
                     No SKU lines yet.
                   </td>
                 </tr>
@@ -313,6 +315,11 @@ export default function PlannedGwpDetail({ profile, isNew }) {
                     </option>
                   ))}
                 </select>
+                <input
+                  value={references.find((r) => r.sku_code === newLine.isku)?.item_name || ''}
+                  disabled
+                  placeholder="Item description (auto)"
+                />
                 <input
                   type="number"
                   placeholder="Qty per set"
