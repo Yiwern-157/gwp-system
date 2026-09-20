@@ -26,7 +26,8 @@ export default function PlannedGwpDetail({ profile, isNew }) {
 
   const [header, setHeader] = useState(emptyHeader)
   const [record, setRecord] = useState(null)
-  const [lines, setLines] = useState([])
+  const [lines, setLines] = useState([]) // saved lines, existing request only
+  const [draftLines, setDraftLines] = useState([]) // not-yet-saved lines, new request only
   const [types, setTypes] = useState([])
   const [tags, setTags] = useState([])
   const [platforms, setPlatforms] = useState([])
@@ -54,7 +55,19 @@ export default function PlannedGwpDetail({ profile, isNew }) {
   }, [])
 
   useEffect(() => {
-    if (!isNew && id) load()
+    if (!isNew && id) {
+      load()
+    } else if (isNew && preset?.presetIsku) {
+      // "Plan next use" preset: start the new request with this leftover already queued as a line.
+      setDraftLines([
+        {
+          isku: preset.presetIsku,
+          qty_per_set: preset.presetQtyPerSet || 1,
+          requested_qty_sets: preset.presetQtySets,
+          reused_from_line_id: preset.reusedFromLineId || null,
+        },
+      ])
+    }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [id])
 
@@ -108,21 +121,27 @@ export default function PlannedGwpDetail({ profile, isNew }) {
         setSaving(false)
         return
       }
-      // "Plan next use" preset: immediately create the first line from the leftover.
-      if (preset?.presetIsku) {
-        const { data: lineRow, error: lineErr } = await supabase
+
+      if (draftLines.length > 0) {
+        const rowsToInsert = draftLines.map((l) => ({
+          request_id: data.id,
+          isku: l.isku,
+          qty_per_set: l.qty_per_set,
+          requested_qty_sets: l.requested_qty_sets,
+          reused_from_line_id: l.reused_from_line_id || null,
+        }))
+        const { data: insertedLines, error: lineErr } = await supabase
           .from('planned_gwp_bundling_lines')
-          .insert({
-            request_id: data.id,
-            isku: preset.presetIsku,
-            qty_per_set: preset.presetQtyPerSet || 1,
-            requested_qty_sets: preset.presetQtySets,
-            reused_from_line_id: preset.reusedFromLineId || null,
-          })
+          .insert(rowsToInsert)
           .select()
-          .single()
-        if (!lineErr) {
-          navigate(`/planned-gwp/${data.id}/lines/${lineRow.id}`)
+        if (lineErr) {
+          alert(`Request created, but SKU lines failed to save: ${lineErr.message}`)
+          navigate(`/planned-gwp/${data.id}`)
+          setSaving(false)
+          return
+        }
+        if (insertedLines.length === 1 && preset?.presetIsku) {
+          navigate(`/planned-gwp/${data.id}/lines/${insertedLines[0].id}`)
           setSaving(false)
           return
         }
@@ -144,6 +163,12 @@ export default function PlannedGwpDetail({ profile, isNew }) {
       alert('ISKU and requested quantity are required.')
       return
     }
+    if (isNew) {
+      setDraftLines((d) => [...d, { ...newLine }])
+      setNewLine(emptyLine)
+      setAddingLine(false)
+      return
+    }
     const { error } = await supabase.from('planned_gwp_bundling_lines').insert({
       request_id: id,
       isku: newLine.isku,
@@ -156,6 +181,10 @@ export default function PlannedGwpDetail({ profile, isNew }) {
       setAddingLine(false)
       load()
     }
+  }
+
+  function removeDraftLine(index) {
+    setDraftLines((d) => d.filter((_, i) => i !== index))
   }
 
   const dspHasProcessed = lines.some((l) => l.stock_status !== 'Pending')
@@ -199,6 +228,7 @@ export default function PlannedGwpDetail({ profile, isNew }) {
   }
 
   const selectedTypeDesc = types.find((t) => t.code === header.type)?.description
+  const displayLines = isNew ? draftLines : lines
 
   return (
     <div className="detail-card">
@@ -341,7 +371,128 @@ export default function PlannedGwpDetail({ profile, isNew }) {
         />
       </fieldset>
 
-      <div className="action-row" style={{ justifyContent: 'flex-end' }}>
+      <h3 style={{ marginTop: '1.5rem' }}>SKU lines in this request</h3>
+      <table className="data-table">
+        <thead>
+          <tr>
+            <th>ISKU</th>
+            <th>Item description</th>
+            <th>Requested</th>
+            <th>Stock status</th>
+            <th>Unused</th>
+            <th></th>
+          </tr>
+        </thead>
+        <tbody>
+          {displayLines.map((l, i) => (
+            <tr
+              key={l.id || `draft-${i}`}
+              onClick={!isNew ? () => navigate(`/planned-gwp/${id}/lines/${l.id}`) : undefined}
+              style={isNew ? { cursor: 'default' } : undefined}
+            >
+              <td className="mono">{l.isku}</td>
+              <td>{references.find((r) => r.sku_code === l.isku)?.item_name || '—'}</td>
+              <td>{l.requested_qty_sets} sets</td>
+              <td>
+                <span
+                  className="badge"
+                  style={{
+                    background: stockColors[l.stock_status || 'Pending']?.bg,
+                    color: stockColors[l.stock_status || 'Pending']?.color,
+                  }}
+                >
+                  {l.stock_status || 'Pending'}
+                </span>
+              </td>
+              <td>{l.unused_qty_sets ?? '—'}</td>
+              <td>
+                {isNew ? (
+                  <button
+                    className="link-btn"
+                    onClick={(e) => {
+                      e.stopPropagation()
+                      removeDraftLine(i)
+                    }}
+                  >
+                    Remove
+                  </button>
+                ) : (
+                  <span className="link-btn">View</span>
+                )}
+              </td>
+            </tr>
+          ))}
+          {displayLines.length === 0 && (
+            <tr>
+              <td colSpan={6} className="text-muted">
+                No SKU lines yet.
+              </td>
+            </tr>
+          )}
+        </tbody>
+      </table>
+
+      {addingLine ? (
+        <div className="detail-card" style={{ marginTop: '10px' }}>
+          <div className="grid">
+            <div>
+              <div className="hint-inline">ISKU (type to search)</div>
+              <input
+                list="reference-options"
+                value={newLine.isku}
+                placeholder="Search SKU code or name…"
+                onChange={(e) => setNewLine((l) => ({ ...l, isku: e.target.value }))}
+              />
+              <datalist id="reference-options">
+                {references.map((r) => (
+                  <option key={r.sku_code} value={r.sku_code}>
+                    {r.sku_code} — {r.item_name}
+                  </option>
+                ))}
+              </datalist>
+            </div>
+            <div>
+              <div className="hint-inline">Item description (auto)</div>
+              <input
+                value={references.find((r) => r.sku_code === newLine.isku)?.item_name || ''}
+                disabled
+              />
+            </div>
+            <div>
+              <div className="hint-inline">Qty per set</div>
+              <input
+                type="number"
+                value={newLine.qty_per_set}
+                onChange={(e) => setNewLine((l) => ({ ...l, qty_per_set: e.target.value }))}
+              />
+            </div>
+            <div>
+              <div className="hint-inline">Requested qty (sets)</div>
+              <input
+                type="number"
+                value={newLine.requested_qty_sets}
+                onChange={(e) =>
+                  setNewLine((l) => ({ ...l, requested_qty_sets: e.target.value }))
+                }
+              />
+            </div>
+          </div>
+          <div className="action-row" style={{ justifyContent: 'flex-end' }}>
+            <button className="btn" onClick={() => setAddingLine(false)}>
+              Cancel
+            </button>
+            <button className="btn btn-accent" onClick={handleAddLine}>
+              Add line
+            </button>
+          </div>
+        </div>
+      ) : (
+        <button className="btn btn-accent" style={{ marginTop: '10px' }} onClick={() => setAddingLine(true)}>
+          + Add SKU line
+        </button>
+      )}
+
+      <div className="action-row" style={{ justifyContent: 'flex-end', marginTop: '1.5rem' }}>
         <button className="btn" onClick={() => navigate('/planned-gwp')}>
           Back
         </button>
@@ -349,115 +500,6 @@ export default function PlannedGwpDetail({ profile, isNew }) {
           {isNew ? 'Create request' : 'Save changes'}
         </button>
       </div>
-
-      {!isNew && (
-        <>
-          <h3 style={{ marginTop: '1.5rem' }}>SKU lines in this request</h3>
-          <table className="data-table">
-            <thead>
-              <tr>
-                <th>ISKU</th>
-                <th>Item description</th>
-                <th>Requested</th>
-                <th>Stock status</th>
-                <th>Unused</th>
-                <th></th>
-              </tr>
-            </thead>
-            <tbody>
-              {lines.map((l) => (
-                <tr key={l.id} onClick={() => navigate(`/planned-gwp/${id}/lines/${l.id}`)}>
-                  <td className="mono">{l.isku}</td>
-                  <td>{references.find((r) => r.sku_code === l.isku)?.item_name || '—'}</td>
-                  <td>{l.requested_qty_sets} sets</td>
-                  <td>
-                    <span
-                      className="badge"
-                      style={{
-                        background: stockColors[l.stock_status]?.bg,
-                        color: stockColors[l.stock_status]?.color,
-                      }}
-                    >
-                      {l.stock_status}
-                    </span>
-                  </td>
-                  <td>{l.unused_qty_sets ?? '—'}</td>
-                  <td>
-                    <span className="link-btn">View</span>
-                  </td>
-                </tr>
-              ))}
-              {lines.length === 0 && (
-                <tr>
-                  <td colSpan={6} className="text-muted">
-                    No SKU lines yet.
-                  </td>
-                </tr>
-              )}
-            </tbody>
-          </table>
-
-          {addingLine ? (
-            <div className="detail-card" style={{ marginTop: '10px' }}>
-              <div className="grid">
-                <div>
-                  <div className="hint-inline">ISKU (type to search)</div>
-                  <input
-                    list="reference-options"
-                    value={newLine.isku}
-                    placeholder="Search SKU code or name…"
-                    onChange={(e) => setNewLine((l) => ({ ...l, isku: e.target.value }))}
-                  />
-                  <datalist id="reference-options">
-                    {references.map((r) => (
-                      <option key={r.sku_code} value={r.sku_code}>
-                        {r.sku_code} — {r.item_name}
-                      </option>
-                    ))}
-                  </datalist>
-                </div>
-                <div>
-                  <div className="hint-inline">Item description (auto)</div>
-                  <input
-                    value={references.find((r) => r.sku_code === newLine.isku)?.item_name || ''}
-                    disabled
-                  />
-                </div>
-                <div>
-                  <div className="hint-inline">Qty per set</div>
-                  <input
-                    type="number"
-                    value={newLine.qty_per_set}
-                    onChange={(e) => setNewLine((l) => ({ ...l, qty_per_set: e.target.value }))}
-                  />
-                </div>
-                <div>
-                  <div className="hint-inline">Requested qty (sets)</div>
-                  <input
-                    type="number"
-                    value={newLine.requested_qty_sets}
-                    onChange={(e) =>
-                      setNewLine((l) => ({ ...l, requested_qty_sets: e.target.value }))
-                    }
-                  />
-                </div>
-              </div>
-              <div className="action-row" style={{ justifyContent: 'flex-end' }}>
-                <button className="btn" onClick={() => setAddingLine(false)}>
-                  Cancel
-                </button>
-                <button className="btn btn-accent" onClick={handleAddLine}>
-                  Add line
-                </button>
-              </div>
-            </div>
-          ) : (
-            <button className="btn btn-accent" style={{ marginTop: '10px' }} onClick={() => setAddingLine(true)}>
-              + Add SKU line
-            </button>
-          )}
-        </>
-      )}
     </div>
   )
 }
