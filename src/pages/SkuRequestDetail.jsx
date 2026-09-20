@@ -93,6 +93,10 @@ export default function SkuRequestDetail({ profile, isNew }) {
     GENERATED_FIELDS.forEach((f) => delete payload[f])
     payload.requestor_id = payload.requestor_id || profile?.id
     payload.updated_at = new Date().toISOString()
+    // Postgres rejects "" for a date column — an empty date input must become null.
+    ;['date_requested', 'target_launch_date', 'stock_prep_date'].forEach((f) => {
+      if (payload[f] === '') payload[f] = null
+    })
     return payload
   }
 
@@ -250,6 +254,7 @@ export default function SkuRequestDetail({ profile, isNew }) {
           placeholder="Item description"
           value={form.item_description || ''}
           onChange={(e) => update('item_description', e.target.value)}
+          style={{ width: '100%', marginBottom: '10px' }}
         />
         <textarea
           placeholder="SKU composition, e.g. CGB30+STG30+SOSE30"
