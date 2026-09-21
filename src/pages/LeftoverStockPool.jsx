@@ -108,7 +108,8 @@ export default function LeftoverStockPool({ profile }) {
       {loading ? (
         <p>Loading…</p>
       ) : (
-        <table className="data-table">
+        <div className="table-scroll">
+<table className="data-table">
           <thead>
             <tr>
               <th>ISKU</th>
@@ -203,6 +204,7 @@ export default function LeftoverStockPool({ profile }) {
             )}
           </tbody>
         </table>
+</div>
       )}
     </div>
   )

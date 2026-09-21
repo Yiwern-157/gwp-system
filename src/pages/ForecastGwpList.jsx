@@ -82,7 +82,8 @@ export default function ForecastGwpList() {
       {loading ? (
         <p>Loading…</p>
       ) : (
-        <table className="data-table">
+        <div className="table-scroll">
+<table className="data-table">
           <thead>
             <tr>
               <th>Campaign month</th>
@@ -131,6 +132,7 @@ export default function ForecastGwpList() {
             )}
           </tbody>
         </table>
+</div>
       )}
     </div>
   )

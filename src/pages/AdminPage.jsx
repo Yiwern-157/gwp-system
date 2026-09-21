@@ -57,7 +57,8 @@ function ActivityLogTab() {
       {loading ? (
         <p>Loading…</p>
       ) : (
-        <table className="data-table">
+        <div className="table-scroll">
+<table className="data-table">
           <thead>
             <tr>
               <th>When</th>
@@ -86,6 +87,7 @@ function ActivityLogTab() {
             )}
           </tbody>
         </table>
+</div>
       )}
       <p className="hint" style={{ marginTop: '10px' }}>
         Showing the most recent 300 rows within the selected date range.
@@ -151,7 +153,8 @@ function PicklistsTab() {
       {loading ? (
         <p>Loading…</p>
       ) : (
-        <table className="data-table">
+        <div className="table-scroll">
+<table className="data-table">
           <thead>
             <tr>
               <th>Code</th>
@@ -181,6 +184,7 @@ function PicklistsTab() {
             ))}
           </tbody>
         </table>
+</div>
       )}
 
       <div className="detail-card" style={{ marginTop: '1rem' }}>

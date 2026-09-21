@@ -96,7 +96,8 @@ export default function SkuRequestList() {
       {loading ? (
         <p>Loading…</p>
       ) : (
-        <table className="data-table">
+        <div className="table-scroll">
+<table className="data-table">
           <thead>
             <tr>
               <th>Item</th>
@@ -133,6 +134,7 @@ export default function SkuRequestList() {
             )}
           </tbody>
         </table>
+</div>
       )}
     </div>
   )

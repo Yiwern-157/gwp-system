@@ -195,7 +195,8 @@ export default function ReferenceList() {
       {loading ? (
         <p>Loading…</p>
       ) : (
-        <table className="data-table">
+        <div className="table-scroll">
+<table className="data-table">
           <thead>
             <tr>
               <th style={{ width: '28px' }}>
@@ -286,6 +287,7 @@ export default function ReferenceList() {
             )}
           </tbody>
         </table>
+</div>
       )}
       <p className="hint" style={{ marginTop: '10px' }}>
         Inactive SKUs stay in history for past requests but drop out of new ISKU dropdowns.

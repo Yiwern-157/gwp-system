@@ -34,12 +34,13 @@ export default function Layout({ profile, children }) {
               to={item.to}
               className={isActive(item.to) ? 'nav-active' : ''}
             >
-              {item.tag && <span className="nav-tag">{item.tag}</span>}
+              <span className="nav-tag">{item.tag || '\u00A0'}</span>
               {item.label}
             </Link>
           ))}
           {profile?.role === 'Admin' && (
             <Link to="/admin" className={isActive('/admin') ? 'nav-active' : ''}>
+              <span className="nav-tag">{'\u00A0'}</span>
               Admin
             </Link>
           )}

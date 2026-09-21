@@ -47,14 +47,14 @@ body {
 .app-shell { min-height: 100vh; display: flex; flex-direction: column; }
 .topbar {
   display: flex;
-  align-items: center;
+  align-items: flex-end;
   gap: 1.5rem;
   padding: 0.75rem 1.5rem;
   background: var(--surface);
   border-bottom: 1px solid var(--border);
 }
-.brand { font-weight: 600; color: var(--text); text-decoration: none; }
-.topnav { display: flex; gap: 14px; flex-wrap: wrap; }
+.brand { font-weight: 600; color: var(--text); text-decoration: none; align-self: center; }
+.topnav { display: flex; gap: 14px; flex-wrap: wrap; align-items: flex-end; }
 .topnav a {
   color: var(--text-secondary);
   text-decoration: none;
@@ -62,7 +62,10 @@ body {
   white-space: nowrap;
   padding-bottom: 10px;
   border-bottom: 2px solid transparent;
-  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  line-height: 1.3;
 }
 .topnav a:hover { color: var(--text); }
 .topnav a.nav-active { color: var(--text); border-bottom-color: var(--accent); font-weight: 500; }
@@ -72,11 +75,29 @@ body {
   font-weight: 700;
   display: block;
   line-height: 1;
-  margin-bottom: 1px;
 }
-.user-chip { margin-left: auto; display: flex; align-items: center; gap: 0.75rem; font-size: 0.85rem; color: var(--text-secondary); }
+.user-chip { margin-left: auto; display: flex; align-items: center; gap: 0.75rem; font-size: 0.85rem; color: var(--text-secondary); align-self: center; }
 
-.app-main { flex: 1; padding: 1.5rem 2rem; max-width: 1000px; width: 100%; margin: 0 auto; }
+.app-main { flex: 1; padding: 1.5rem 2rem; max-width: 1440px; width: 100%; margin: 0 auto; }
+
+.table-scroll { overflow-x: auto; max-width: 100%; }
+.data-table.fixed-layout { table-layout: fixed; }
+.data-table th, .data-table td {
+  vertical-align: middle;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.data-table th { position: relative; }
+.col-resizer {
+  position: absolute;
+  right: 0;
+  top: 0;
+  bottom: 0;
+  width: 6px;
+  cursor: col-resize;
+  user-select: none;
+}
+.col-resizer:hover { background: var(--border-accent); }
 
 h1 { font-size: 1.4rem; margin: 0 0 0.75rem; }
 h2 { font-size: 1.15rem; margin: 0; }
