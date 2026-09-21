@@ -14,6 +14,7 @@ export default function PlannedGwpLineDetail({ profile }) {
   const [reason, setReason] = useState('')
   const [showReasonBox, setShowReasonBox] = useState(false)
   const [pendingAction, setPendingAction] = useState(null)
+  const [editNote, setEditNote] = useState('')
   const [saving, setSaving] = useState(false)
 
   const isDSP = profile?.role === 'DSP' || profile?.role === 'Admin'
@@ -73,17 +74,46 @@ export default function PlannedGwpLineDetail({ profile }) {
     return payload
   }
 
+  const FIELD_LABELS = {
+    isku: 'ISKU',
+    qty_per_set: 'Pieces/box',
+    requested_qty_sets: 'Requested qty',
+    ship_out_date_planned: 'Ship-out date (planned)',
+    ship_out_date_actual: 'Ship-out date (actual)',
+    actual_shipped_qty: 'Actual shipped qty',
+    batch_expiry_date: 'Batch expiry date',
+    actual_sold_qty_sets: 'Actual sold qty',
+  }
+
+  function describeChanges() {
+    const changes = []
+    for (const [field, label] of Object.entries(FIELD_LABELS)) {
+      const before = line?.[field] ?? ''
+      const after = form?.[field] ?? ''
+      if (String(before) !== String(after)) {
+        changes.push(`${label} from "${before || '—'}" to "${after || '—'}"`)
+      }
+    }
+    return changes
+  }
+
   async function handleSave() {
     setSaving(true)
+    const changes = describeChanges()
     const payload = cleanPayload()
     const { error } = await supabase.from('planned_gwp_bundling_lines').update(payload).eq('id', lineId)
-    if (error) alert(error.message)
-    else {
-      await supabase
-        .from('planned_gwp_bundling_line_history')
-        .insert({ line_id: lineId, action: 'Edited', actor_id: profile?.id })
-      await load()
+    if (error) {
+      alert(error.message)
+      setSaving(false)
+      return
     }
+    const changeSummary = changes.length ? changes.join('; ') : 'No tracked fields changed'
+    const fullReason = editNote.trim() ? `${changeSummary} — Note: ${editNote.trim()}` : changeSummary
+    await supabase
+      .from('planned_gwp_bundling_line_history')
+      .insert({ line_id: lineId, action: 'Edited', actor_id: profile?.id, reason: fullReason })
+    setEditNote('')
+    await load()
     setSaving(false)
   }
 
@@ -336,6 +366,13 @@ export default function PlannedGwpLineDetail({ profile }) {
           </div>
         )}
       </fieldset>
+
+      <textarea
+        placeholder="Remark for this edit (optional) — why the change was made"
+        value={editNote}
+        onChange={(e) => setEditNote(e.target.value)}
+        style={{ marginBottom: '10px' }}
+      />
 
       <div className="action-row" style={{ justifyContent: 'flex-end' }}>
         <button className="btn" onClick={() => navigate(`/planned-gwp/${id}`)}>

@@ -45,6 +45,7 @@ export default function SkuRequestDetail({ profile, isNew }) {
   const [showRejectBox, setShowRejectBox] = useState(false)
   const [cancelReason, setCancelReason] = useState('')
   const [showCancelBox, setShowCancelBox] = useState(false)
+  const [editNote, setEditNote] = useState('')
   const [saving, setSaving] = useState(false)
 
   const isComOps = profile?.role === 'ComOps' || profile?.role === 'Admin'
@@ -102,12 +103,40 @@ export default function SkuRequestDetail({ profile, isNew }) {
     return payload
   }
 
+  const FIELD_LABELS = {
+    country: 'Country',
+    platform: 'Platform',
+    target_launch_date: 'Target launch date',
+    sku_status_type: 'SKU status type',
+    item_description: 'Item description',
+    sku_creation: 'SKU composition',
+    barcode: 'Barcode',
+    wms_enrollment_status: 'WMS enrollment status',
+    listing_link: 'Listing link',
+    listing_status: 'Listing status',
+    stock_prep_date: 'Stock prep date',
+    stock_prep_status: 'Stock prep status',
+  }
+
+  function describeChanges() {
+    const changes = []
+    for (const [field, label] of Object.entries(FIELD_LABELS)) {
+      const before = record?.[field] ?? ''
+      const after = form?.[field] ?? ''
+      if (String(before) !== String(after)) {
+        changes.push(`${label} from "${before || '—'}" to "${after || '—'}"`)
+      }
+    }
+    return changes
+  }
+
   async function handleSave() {
     if (!form.target_launch_date || !form.country) {
       alert('Target launch date and country are required.')
       return
     }
     setSaving(true)
+    const changes = !isNew ? describeChanges() : []
     const payload = cleanPayload()
 
     if (isNew) {
@@ -129,9 +158,12 @@ export default function SkuRequestDetail({ profile, isNew }) {
       if (error) {
         alert(error.message)
       } else {
+        const changeSummary = changes.length ? changes.join('; ') : 'No tracked fields changed'
+        const fullReason = editNote.trim() ? `${changeSummary} — Note: ${editNote.trim()}` : changeSummary
         await supabase
           .from('sku_barcode_request_history')
-          .insert({ request_id: id, action: 'Edited', actor_id: profile?.id })
+          .insert({ request_id: id, action: 'Edited', actor_id: profile?.id, reason: fullReason })
+        setEditNote('')
         await load()
       }
     }
@@ -176,8 +208,16 @@ export default function SkuRequestDetail({ profile, isNew }) {
 
   async function handleDelete() {
     if (!window.confirm('Delete this request? DSP has not processed it yet, so this removes it completely.')) return
-    await supabase.from('sku_barcode_request_history').delete().eq('request_id', id)
-    await supabase.from('sku_barcode_request').delete().eq('id', id)
+    const { error: histErr } = await supabase.from('sku_barcode_request_history').delete().eq('request_id', id)
+    if (histErr) {
+      alert(`Could not delete: ${histErr.message}`)
+      return
+    }
+    const { error } = await supabase.from('sku_barcode_request').delete().eq('id', id)
+    if (error) {
+      alert(`Could not delete: ${error.message}`)
+      return
+    }
     navigate('/sku-requests')
   }
 
@@ -399,6 +439,15 @@ export default function SkuRequestDetail({ profile, isNew }) {
             </button>
           )}
         </div>
+      )}
+
+      {!isNew && (
+        <textarea
+          placeholder="Remark for this edit (optional) — why the change was made"
+          value={editNote}
+          onChange={(e) => setEditNote(e.target.value)}
+          style={{ marginBottom: '10px' }}
+        />
       )}
 
       <div className="action-row" style={{ justifyContent: 'flex-end' }}>

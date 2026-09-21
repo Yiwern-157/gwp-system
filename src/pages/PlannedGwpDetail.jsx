@@ -198,10 +198,28 @@ export default function PlannedGwpDetail({ profile, isNew }) {
       return
     const lineIds = lines.map((l) => l.id)
     if (lineIds.length) {
-      await supabase.from('planned_gwp_bundling_line_history').delete().in('line_id', lineIds)
-      await supabase.from('planned_gwp_bundling_lines').delete().eq('request_id', id)
+      const { error: histErr } = await supabase
+        .from('planned_gwp_bundling_line_history')
+        .delete()
+        .in('line_id', lineIds)
+      if (histErr) {
+        alert(`Could not delete: ${histErr.message}`)
+        return
+      }
+      const { error: lineErr } = await supabase
+        .from('planned_gwp_bundling_lines')
+        .delete()
+        .eq('request_id', id)
+      if (lineErr) {
+        alert(`Could not delete: ${lineErr.message}`)
+        return
+      }
     }
-    await supabase.from('planned_gwp_bundling').delete().eq('id', id)
+    const { error } = await supabase.from('planned_gwp_bundling').delete().eq('id', id)
+    if (error) {
+      alert(`Could not delete: ${error.message}`)
+      return
+    }
     navigate('/planned-gwp')
   }
 

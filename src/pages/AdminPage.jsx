@@ -10,8 +10,43 @@ const LIST_TYPES = [
   'forecast_breakdown_type',
 ]
 
+function safeParseJSON(text) {
+  if (!text) return null
+  try {
+    return JSON.parse(text)
+  } catch {
+    return null
+  }
+}
+
+function summarizeSnapshot(tableName, snap) {
+  if (!snap) return ''
+  switch (tableName) {
+    case 'sku_barcode_request':
+      return `Item: ${snap.item_description || '—'}`
+    case 'planned_gwp_bundling':
+      return `Ref No: ${snap.reference_no || '—'}`
+    case 'planned_gwp_bundling_lines':
+      return `ISKU: ${snap.isku || '—'}, Qty: ${snap.requested_qty_sets ?? '—'} sets`
+    case 'forecast_gwp':
+      return `ISKU: ${snap.isku || '—'}, Month: ${snap.target_month || '—'}`
+    default:
+      return ''
+  }
+}
+
+function refFromSnapshot(tableName, snap) {
+  if (!snap) return null
+  if (tableName === 'sku_barcode_request') return snap.item_description
+  if (tableName === 'planned_gwp_bundling') return snap.reference_no
+  if (tableName === 'planned_gwp_bundling_lines') return snap.isku
+  if (tableName === 'forecast_gwp') return `${snap.isku} · ${snap.target_month}`
+  return null
+}
+
 function ActivityLogTab() {
   const [rows, setRows] = useState([])
+  const [refMap, setRefMap] = useState({})
   const [loading, setLoading] = useState(true)
   const [nameFilter, setNameFilter] = useState('')
   const [dateFrom, setDateFrom] = useState('')
@@ -32,8 +67,80 @@ function ActivityLogTab() {
     if (dateFrom) query = query.gte('created_at', dateFrom)
     if (dateTo) query = query.lte('created_at', dateTo + 'T23:59:59')
     const { data, error } = await query
-    if (!error) setRows(data)
+    if (!error) {
+      setRows(data)
+      await enrichRefs(data)
+    }
     setLoading(false)
+  }
+
+  // Live-lookup each table's identifying label (Ref No / Item / ISKU) so
+  // "view"/"update" rows on records that still exist show something
+  // meaningful, not just a UUID fragment.
+  async function enrichRefs(data) {
+    const ids = {
+      sku_barcode_request: new Set(),
+      planned_gwp_bundling: new Set(),
+      planned_gwp_bundling_lines: new Set(),
+      forecast_gwp: new Set(),
+    }
+    data.forEach((r) => {
+      if (ids[r.table_name]) ids[r.table_name].add(r.record_id)
+    })
+    const map = {}
+
+    if (ids.sku_barcode_request.size) {
+      const { data: d } = await supabase
+        .from('sku_barcode_request')
+        .select('id, item_description')
+        .in('id', [...ids.sku_barcode_request])
+      d?.forEach((row) => (map[`sku_barcode_request:${row.id}`] = row.item_description))
+    }
+    if (ids.planned_gwp_bundling.size) {
+      const { data: d } = await supabase
+        .from('planned_gwp_bundling')
+        .select('id, reference_no')
+        .in('id', [...ids.planned_gwp_bundling])
+      d?.forEach((row) => (map[`planned_gwp_bundling:${row.id}`] = row.reference_no))
+    }
+    if (ids.planned_gwp_bundling_lines.size) {
+      const { data: d } = await supabase
+        .from('planned_gwp_bundling_lines')
+        .select('id, isku, request:request_id(reference_no)')
+        .in('id', [...ids.planned_gwp_bundling_lines])
+      d?.forEach(
+        (row) => (map[`planned_gwp_bundling_lines:${row.id}`] = `${row.request?.reference_no || ''} · ${row.isku}`)
+      )
+    }
+    if (ids.forecast_gwp.size) {
+      const { data: d } = await supabase
+        .from('forecast_gwp')
+        .select('id, isku, target_month')
+        .in('id', [...ids.forecast_gwp])
+      d?.forEach((row) => (map[`forecast_gwp:${row.id}`] = `${row.isku} · ${row.target_month}`))
+    }
+    setRefMap(map)
+  }
+
+  function refFor(r) {
+    const live = refMap[`${r.table_name}:${r.record_id}`]
+    if (live) return live
+    if (r.action === 'create') return refFromSnapshot(r.table_name, safeParseJSON(r.new_value)) || '—'
+    if (r.action === 'delete') return refFromSnapshot(r.table_name, safeParseJSON(r.old_value)) || '—'
+    return '—'
+  }
+
+  function detailsFor(r) {
+    if (r.action === 'create') {
+      return `Created — ${summarizeSnapshot(r.table_name, safeParseJSON(r.new_value))}`
+    }
+    if (r.action === 'delete') {
+      return `Deleted — ${summarizeSnapshot(r.table_name, safeParseJSON(r.old_value))}`
+    }
+    if (r.action === 'update' && r.field_changed) {
+      return `Changed ${r.field_changed}: "${r.old_value ?? '—'}" → "${r.new_value ?? '—'}"`
+    }
+    return r.action
   }
 
   const filtered = rows.filter((r) => {
@@ -58,36 +165,36 @@ function ActivityLogTab() {
         <p>Loading…</p>
       ) : (
         <div className="table-scroll">
-<table className="data-table">
-          <thead>
-            <tr>
-              <th>When</th>
-              <th>Who</th>
-              <th>Table</th>
-              <th>Action</th>
-              <th>Record</th>
-            </tr>
-          </thead>
-          <tbody>
-            {filtered.map((r) => (
-              <tr key={r.id}>
-                <td>{new Date(r.created_at).toLocaleString()}</td>
-                <td>{r.actor?.full_name || r.actor?.email || 'Unknown'}</td>
-                <td className="mono">{r.table_name}</td>
-                <td>{r.action}</td>
-                <td className="mono text-muted">{r.record_id?.slice(0, 8)}</td>
-              </tr>
-            ))}
-            {filtered.length === 0 && (
+          <table className="data-table">
+            <thead>
               <tr>
-                <td colSpan={5} className="text-muted">
-                  No activity matches these filters.
-                </td>
+                <th>When</th>
+                <th>Who</th>
+                <th>Table</th>
+                <th>Ref No</th>
+                <th>Details</th>
               </tr>
-            )}
-          </tbody>
-        </table>
-</div>
+            </thead>
+            <tbody>
+              {filtered.map((r) => (
+                <tr key={r.id}>
+                  <td style={{ whiteSpace: 'nowrap' }}>{new Date(r.created_at).toLocaleString()}</td>
+                  <td>{r.actor?.full_name || r.actor?.email || 'Unknown'}</td>
+                  <td className="mono">{r.table_name}</td>
+                  <td className="mono">{refFor(r)}</td>
+                  <td>{detailsFor(r)}</td>
+                </tr>
+              ))}
+              {filtered.length === 0 && (
+                <tr>
+                  <td colSpan={5} className="text-muted">
+                    No activity matches these filters.
+                  </td>
+                </tr>
+              )}
+            </tbody>
+          </table>
+        </div>
       )}
       <p className="hint" style={{ marginTop: '10px' }}>
         Showing the most recent 300 rows within the selected date range.
