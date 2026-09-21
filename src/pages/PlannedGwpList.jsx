@@ -1,46 +1,68 @@
 import { useEffect, useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { supabase } from '../supabaseClient'
-import { COUNTRIES } from '../lib/picklists'
+import { COUNTRIES, fetchPicklist } from '../lib/picklists'
 
 export default function PlannedGwpList() {
   const navigate = useNavigate()
   const [rows, setRows] = useState([])
   const [loading, setLoading] = useState(true)
   const [countryFilter, setCountryFilter] = useState('')
+  const [platformFilter, setPlatformFilter] = useState('')
+  const [picFilter, setPicFilter] = useState('')
   const [search, setSearch] = useState('')
+  const [platforms, setPlatforms] = useState([])
+
+  useEffect(() => {
+    fetchPicklist('planned_gwp_platform').then(setPlatforms).catch(console.error)
+  }, [])
 
   useEffect(() => {
     load()
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [countryFilter])
+  }, [countryFilter, platformFilter])
 
   async function load() {
     setLoading(true)
     let query = supabase
       .from('planned_gwp_bundling')
-      .select('*, planned_gwp_bundling_lines(id, stock_status)')
+      .select(
+        '*, planned_gwp_bundling_lines(id, isku, requested_qty_sets, stock_status, actual_sold_qty_sets), requestor:requestor_id(full_name)'
+      )
+      .order('promo_start_date', { ascending: false, nullsFirst: false })
       .order('created_at', { ascending: false })
     if (countryFilter) query = query.eq('country', countryFilter)
+    if (platformFilter) query = query.eq('platform', platformFilter)
     const { data, error } = await query
     if (!error) setRows(data)
     setLoading(false)
   }
 
-  function lineSummary(row) {
+  // "Who is this waiting on right now" — the whole point of this indicator
+  // is that nobody has to open the request to find out.
+  function pendingOn(row) {
     if (row.status === 'Canceled') return { text: 'Canceled', tone: 'muted' }
-    const lines = row.planned_gwp_bundling_lines
-    if (!lines || lines.length === 0) return { text: 'No lines yet', tone: 'muted' }
-    const withIssue = lines.filter((l) => l.stock_status === 'With Issue').length
-    if (withIssue > 0) return { text: `${withIssue} of ${lines.length} with issue`, tone: 'warning' }
-    const pending = lines.filter((l) => l.stock_status === 'Pending').length
-    if (pending > 0) return { text: `${pending} of ${lines.length} pending`, tone: 'muted' }
-    return { text: `${lines.length} confirmed`, tone: 'success' }
+    const lines = row.planned_gwp_bundling_lines || []
+    if (lines.length === 0) return { text: 'No lines yet', tone: 'muted' }
+    if (lines.some((l) => l.stock_status === 'With Issue'))
+      return { text: 'DSP flagged an issue', tone: 'warning' }
+    if (lines.some((l) => l.stock_status === 'Pending'))
+      return { text: 'Pending DSP', tone: 'warning' }
+    if (lines.some((l) => l.stock_status === 'Canceled') && lines.every((l) => l.stock_status === 'Canceled'))
+      return { text: 'All lines canceled', tone: 'muted' }
+    if (!row.stock_prep_date) return { text: 'Pending stock prep date', tone: 'warning' }
+    const campaignEnded = row.promo_end_date && row.promo_end_date < new Date().toISOString().slice(0, 10)
+    if (campaignEnded && lines.some((l) => l.actual_sold_qty_sets == null))
+      return { text: 'Pending actual sales update', tone: 'warning' }
+    return { text: 'On track', tone: 'success' }
   }
 
-  const filtered = rows.filter(
-    (r) => !search || (r.reference_no || '').toLowerCase().includes(search.toLowerCase())
-  )
+  const filtered = rows.filter((r) => {
+    if (search && !(r.reference_no || '').toLowerCase().includes(search.toLowerCase())) return false
+    if (picFilter && !(r.requestor?.full_name || '').toLowerCase().includes(picFilter.toLowerCase()))
+      return false
+    return true
+  })
 
   return (
     <div>
@@ -58,6 +80,19 @@ export default function PlannedGwpList() {
             </option>
           ))}
         </select>
+        <select value={platformFilter} onChange={(e) => setPlatformFilter(e.target.value)}>
+          <option value="">Platform: All</option>
+          {platforms.map((p) => (
+            <option key={p.code} value={p.code}>
+              {p.label}
+            </option>
+          ))}
+        </select>
+        <input
+          placeholder="PIC name"
+          value={picFilter}
+          onChange={(e) => setPicFilter(e.target.value)}
+        />
         <Link className="btn btn-accent" to="/planned-gwp/new" style={{ marginLeft: 'auto' }}>
           + New campaign SKU
         </Link>
@@ -66,29 +101,39 @@ export default function PlannedGwpList() {
       {loading ? (
         <p>Loading…</p>
       ) : (
+        <div style={{ overflowX: 'auto' }}>
         <table className="data-table">
           <thead>
             <tr>
               <th>Ref no.</th>
               <th>Campaign tag</th>
-              <th>Country/platform</th>
+              <th>Country</th>
+              <th>Platform</th>
               <th>Promo dates</th>
-              <th>Lines</th>
+              <th>ISKUs (qty)</th>
+              <th>PIC</th>
+              <th>Waiting on</th>
             </tr>
           </thead>
           <tbody>
             {filtered.map((r) => {
-              const s = lineSummary(r)
+              const s = pendingOn(r)
+              const lines = r.planned_gwp_bundling_lines || []
               return (
                 <tr key={r.id} onClick={() => navigate(`/planned-gwp/${r.id}`)}>
                   <td className="mono">{r.reference_no}</td>
                   <td>{r.campaign_tag || '—'}</td>
-                  <td>
-                    {r.country} · {r.platform}
-                  </td>
+                  <td>{r.country}</td>
+                  <td>{r.platform}</td>
                   <td>
                     {r.promo_start_date || '—'} → {r.promo_end_date || '—'}
                   </td>
+                  <td className="mono" style={{ fontSize: '11px', whiteSpace: 'normal' }}>
+                    {lines.length === 0
+                      ? '—'
+                      : lines.map((l) => `${l.isku} (${l.requested_qty_sets})`).join(', ')}
+                  </td>
+                  <td>{r.requestor?.full_name || '—'}</td>
                   <td>
                     <span
                       className="badge"
@@ -105,13 +150,14 @@ export default function PlannedGwpList() {
             })}
             {filtered.length === 0 && (
               <tr>
-                <td colSpan={5} className="text-muted">
-                  No campaigns yet.
+                <td colSpan={8} className="text-muted">
+                  No campaigns match these filters.
                 </td>
               </tr>
             )}
           </tbody>
         </table>
+        </div>
       )}
     </div>
   )

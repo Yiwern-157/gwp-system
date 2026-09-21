@@ -187,7 +187,9 @@ export default function PlannedGwpLineDetail({ profile }) {
             />
           </div>
           <div>
-            <div className="hint-inline">Sachets/pieces per box (1 if not divisible)</div>
+            <div className="hint-inline" title="Use 1 if this product isn't split — a box is a box, a bottle is a bottle.">
+              Pieces/box
+            </div>
             <input
               type="number"
               value={form.qty_per_set ?? ''}
@@ -195,14 +197,14 @@ export default function PlannedGwpLineDetail({ profile }) {
             />
           </div>
           <div>
-            <div className="hint-inline">Requested qty (boxes/sets)</div>
+            <div className="hint-inline">Requested (sets)</div>
             <input
               type="number"
               value={form.requested_qty_sets ?? ''}
               onChange={(e) => update('requested_qty_sets', e.target.value)}
             />
           </div>
-          <span className="hint-inline">Total pieces for DSP/Warehouse: {line.conversion_pc ?? '—'} (auto)</span>
+          <span className="hint-inline">Total pieces for DSP/Logistic: {line.conversion_pc ?? '—'} (auto)</span>
         </div>
       </fieldset>
 
@@ -247,7 +249,7 @@ export default function PlannedGwpLineDetail({ profile }) {
 
       <fieldset disabled={!isWarehouse} className="section">
         <legend>
-          Warehouse movement <span className="role-tag">Warehouse</span>
+          DSP/Logistic movement <span className="role-tag">DSP / Logistic</span>
         </legend>
         <div className="grid">
           <div>
@@ -289,7 +291,7 @@ export default function PlannedGwpLineDetail({ profile }) {
         />
         {line.warehouse_remark_updated_at && (
           <div className="hint-inline">
-            Last updated by Warehouse: {new Date(line.warehouse_remark_updated_at).toLocaleString()}
+            Last updated by DSP/Logistic: {new Date(line.warehouse_remark_updated_at).toLocaleString()}
           </div>
         )}
       </fieldset>

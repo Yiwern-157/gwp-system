@@ -34,7 +34,7 @@ export default function App() {
         <Route path="/planned-gwp/new" element={<PlannedGwpDetail profile={profile} isNew />} />
         <Route path="/planned-gwp/:id" element={<PlannedGwpDetail profile={profile} />} />
         <Route path="/planned-gwp/:id/lines/:lineId" element={<PlannedGwpLineDetail profile={profile} />} />
-        <Route path="/leftover-stock" element={<LeftoverStockPool />} />
+        <Route path="/leftover-stock" element={<LeftoverStockPool profile={profile} />} />
 
         <Route path="/forecast-gwp" element={<ForecastGwpList />} />
         <Route path="/forecast-gwp/new" element={<ForecastGwpDetail profile={profile} isNew />} />

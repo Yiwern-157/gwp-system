@@ -8,6 +8,7 @@ const emptyForm = {
   country: '',
   platform: '',
   isku: '',
+  qty_per_set: 1,
   confirmed_qty_sets: '',
   remarks: '',
 }
@@ -25,6 +26,11 @@ export default function ForecastGwpDetail({ profile, isNew }) {
   const [suggestion, setSuggestion] = useState(null)
   const [duplicateWarning, setDuplicateWarning] = useState(null)
   const [saving, setSaving] = useState(false)
+  const [cancelReason, setCancelReason] = useState('')
+  const [showCancelBox, setShowCancelBox] = useState(false)
+
+  const isComOps = profile?.role === 'ComOps' || profile?.role === 'Admin'
+  const isDSP = profile?.role === 'DSP' || profile?.role === 'Admin'
 
   useEffect(() => {
     fetchPicklist('forecast_breakdown_type').then(setBreakdownTypes).catch(console.error)
@@ -93,9 +99,10 @@ export default function ForecastGwpDetail({ profile, isNew }) {
 
   function cleanPayload() {
     const payload = { ...form }
-    ;['id', 'created_at', 'breakdown_total', 'match_status', 'graduation_status', 'graduated_to_request_id'].forEach(
-      (f) => delete payload[f]
-    )
+    ;[
+      'id', 'created_at', 'breakdown_total', 'match_status', 'graduation_status',
+      'graduated_to_request_id', 'status', 'dsp_ack_required', 'dsp_acknowledged_at',
+    ].forEach((f) => delete payload[f])
     if (payload.target_month === '') payload.target_month = null
     payload.requestor_id = payload.requestor_id || profile?.id
     payload.updated_at = new Date().toISOString()
@@ -186,7 +193,7 @@ export default function ForecastGwpDetail({ profile, isNew }) {
     await supabase.from('planned_gwp_bundling_lines').insert({
       request_id: newHeader.id,
       isku: record.isku,
-      qty_per_set: 1,
+      qty_per_set: record.qty_per_set || 1,
       requested_qty_sets: record.confirmed_qty_sets,
     })
     await supabase
@@ -196,6 +203,53 @@ export default function ForecastGwpDetail({ profile, isNew }) {
     navigate(`/planned-gwp/${newHeader.id}`)
   }
 
+  function daysUntilCampaign() {
+    if (!record?.target_month) return null
+    const target = new Date(record.target_month)
+    const today = new Date()
+    return Math.round((target - today) / 86400000)
+  }
+
+  async function handleCancelForecast() {
+    if (!cancelReason.trim()) {
+      alert('A reason is required to cancel.')
+      return
+    }
+    const daysLeft = daysUntilCampaign()
+    const lateCanel = daysLeft != null && daysLeft <= 14
+    const notedRemarks = `${form.remarks || ''}\n\n[Canceled by ${profile?.full_name || profile?.email}] ${cancelReason}`.trim()
+
+    await supabase
+      .from('forecast_gwp')
+      .update({
+        status: 'Canceled',
+        remarks: notedRemarks,
+        dsp_ack_required: lateCanel,
+      })
+      .eq('id', id)
+
+    if (lateCanel) {
+      await supabase.from('notifications_log').insert({
+        recipient_id: null,
+        channel: 'email',
+        context: `Forecast for ${record.isku} (${record.country}/${record.platform}, ${record.target_month}) canceled with ${daysLeft} days to go — needs DSP acknowledgment. Reason: ${cancelReason}`,
+        related_table: 'forecast_gwp',
+        related_id: id,
+      })
+    }
+    setCancelReason('')
+    setShowCancelBox(false)
+    await load()
+  }
+
+  async function handleAcknowledge() {
+    await supabase.from('forecast_gwp').update({ dsp_acknowledged_at: new Date().toISOString() }).eq('id', id)
+    await load()
+  }
+
+  const totalPieces =
+    (Number(form.qty_per_set) || 0) * (Number(form.confirmed_qty_sets) || 0)
+
   return (
     <div className="detail-card">
       {!isNew && record && (
@@ -203,15 +257,65 @@ export default function ForecastGwpDetail({ profile, isNew }) {
           <h2>
             {record.target_month} · {record.country} · {record.platform} · {record.isku}
           </h2>
-          <span
-            className="badge"
-            style={{
-              background: record.match_status === 'Matched' ? 'var(--success-bg)' : 'var(--danger-bg)',
-              color: record.match_status === 'Matched' ? 'var(--success)' : 'var(--danger)',
-            }}
-          >
-            {record.match_status}
-          </span>
+          <div style={{ display: 'flex', gap: '6px' }}>
+            {record.status === 'Canceled' && (
+              <span className="badge" style={{ background: 'var(--surface-2)', color: 'var(--text-muted)' }}>
+                Canceled
+              </span>
+            )}
+            <span
+              className="badge"
+              style={{
+                background: record.match_status === 'Matched' ? 'var(--success-bg)' : 'var(--danger-bg)',
+                color: record.match_status === 'Matched' ? 'var(--success)' : 'var(--danger)',
+              }}
+            >
+              {record.match_status}
+            </span>
+          </div>
+        </div>
+      )}
+
+      {!isNew && record?.dsp_ack_required && !record?.dsp_acknowledged_at && (
+        <div className="detail-card" style={{ background: 'var(--danger-bg)', marginBottom: '1rem' }}>
+          <div style={{ color: 'var(--danger)', fontWeight: 500, fontSize: '13px', marginBottom: '4px' }}>
+            Canceled with less than 2 weeks to the campaign
+          </div>
+          <div className="text-secondary" style={{ fontSize: '13px', marginBottom: '8px' }}>
+            DSP needs to acknowledge this late cancellation — stock or logistics may already be in motion.
+          </div>
+          {isDSP && (
+            <button className="btn btn-danger" onClick={handleAcknowledge}>
+              Acknowledge
+            </button>
+          )}
+        </div>
+      )}
+      {!isNew && record?.dsp_ack_required && record?.dsp_acknowledged_at && (
+        <p className="hint">
+          Acknowledged by DSP on {new Date(record.dsp_acknowledged_at).toLocaleString()}.
+        </p>
+      )}
+
+      {!isNew && isComOps && record?.status !== 'Canceled' && (
+        <div className="action-row">
+          <button className="btn btn-danger" onClick={() => setShowCancelBox((v) => !v)}>
+            Cancel this forecast
+          </button>
+        </div>
+      )}
+      {showCancelBox && (
+        <div className="reason-box">
+          <div className="reason-label">Reason for canceling (required)</div>
+          <textarea value={cancelReason} onChange={(e) => setCancelReason(e.target.value)} />
+          {daysUntilCampaign() != null && daysUntilCampaign() <= 14 && (
+            <div className="hint" style={{ color: 'var(--danger)' }}>
+              Only {daysUntilCampaign()} days to the campaign — DSP will be notified to acknowledge.
+            </div>
+          )}
+          <button className="btn btn-danger" onClick={handleCancelForecast}>
+            Confirm cancel
+          </button>
         </div>
       )}
 
@@ -231,7 +335,7 @@ export default function ForecastGwpDetail({ profile, isNew }) {
         </div>
       )}
 
-      <fieldset className="section">
+      <fieldset disabled={!isComOps} className="section">
         <legend>
           Confirm forecast <span className="role-tag">ComOps</span>
         </legend>
@@ -265,12 +369,28 @@ export default function ForecastGwpDetail({ profile, isNew }) {
               </option>
             ))}
           </select>
-          <input
-            type="number"
-            placeholder="Confirmed qty (sets)"
-            value={form.confirmed_qty_sets ?? ''}
-            onChange={(e) => update('confirmed_qty_sets', e.target.value)}
-          />
+          <div>
+            <div className="hint-inline" title="Use 1 if this product isn't split — a box is a box, a bottle is a bottle.">
+              Pieces/box
+            </div>
+            <input
+              type="number"
+              value={form.qty_per_set ?? 1}
+              onChange={(e) => update('qty_per_set', e.target.value)}
+            />
+          </div>
+          <div>
+            <div className="hint-inline">Confirmed (sets)</div>
+            <input
+              type="number"
+              value={form.confirmed_qty_sets ?? ''}
+              onChange={(e) => update('confirmed_qty_sets', e.target.value)}
+            />
+          </div>
+        </div>
+        <div className="hint" style={{ marginBottom: '8px' }}>
+          {totalPieces} total pieces for boosters/sachets — use 1 piece per box for products that
+          aren't split.
         </div>
         <textarea
           placeholder="Remarks — why this differs from the system suggestion, if it does"
@@ -280,7 +400,7 @@ export default function ForecastGwpDetail({ profile, isNew }) {
       </fieldset>
 
       {!isNew && (
-        <fieldset className="section">
+        <fieldset disabled={!isComOps} className="section">
           <legend>Breakdown by campaign type</legend>
           <table className="data-table">
             <thead>
@@ -333,7 +453,7 @@ export default function ForecastGwpDetail({ profile, isNew }) {
         </fieldset>
       )}
 
-      {!isNew && record && (
+      {!isNew && record && record.status !== 'Canceled' && (
         <div className="detail-card" style={{ background: 'var(--warning-bg)', marginBottom: '1rem' }}>
           <div className="hint-inline" style={{ color: 'var(--warning)' }}>
             When {record.target_month} becomes next month, submit this to create the Planned
@@ -378,7 +498,7 @@ export default function ForecastGwpDetail({ profile, isNew }) {
 
       <div className="action-row" style={{ justifyContent: 'flex-end' }}>
         <button className="btn" onClick={() => navigate('/forecast-gwp')}>
-          Cancel
+          Back
         </button>
         <button className="btn btn-accent" disabled={saving} onClick={handleSave}>
           {isNew ? 'Save forecast' : 'Save changes'}

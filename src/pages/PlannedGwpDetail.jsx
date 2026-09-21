@@ -340,13 +340,14 @@ export default function PlannedGwpDetail({ profile, isNew }) {
           </div>
         )}
         <textarea
-          placeholder="Remarks (optional notes for DSP / Warehouse)"
+          placeholder="Remarks (optional notes for DSP / Logistic)"
           value={header.remarks || ''}
           onChange={(e) => updateHeader('remarks', e.target.value)}
         />
       </fieldset>
 
       <h3 style={{ marginTop: '1.5rem' }}>SKU lines in this request</h3>
+      <div style={{ overflowX: 'auto' }}>
       <table className="data-table">
         <thead>
           <tr>
@@ -357,6 +358,8 @@ export default function PlannedGwpDetail({ profile, isNew }) {
             <th>Total pcs</th>
             <th>Stock status</th>
             <th>Unused</th>
+            <th>Batch expiry</th>
+            <th>Time to expiry</th>
             <th></th>
           </tr>
         </thead>
@@ -387,6 +390,12 @@ export default function PlannedGwpDetail({ profile, isNew }) {
                 </span>
               </td>
               <td>{l.unused_qty_sets ?? '—'}</td>
+              <td>{l.batch_expiry_date || '—'}</td>
+              <td>
+                {l.batch_expiry_date
+                  ? `~${Math.round((new Date(l.batch_expiry_date) - new Date()) / 86400000)} days`
+                  : '—'}
+              </td>
               <td>
                 {isNew ? (
                   <button
@@ -406,13 +415,14 @@ export default function PlannedGwpDetail({ profile, isNew }) {
           ))}
           {displayLines.length === 0 && (
             <tr>
-              <td colSpan={8} className="text-muted">
+              <td colSpan={10} className="text-muted">
                 No SKU lines yet.
               </td>
             </tr>
           )}
         </tbody>
       </table>
+      </div>
 
       {addingLine ? (
         <div className="detail-card" style={{ marginTop: '10px' }}>
@@ -441,7 +451,9 @@ export default function PlannedGwpDetail({ profile, isNew }) {
               />
             </div>
             <div>
-              <div className="hint-inline">Sachets/pieces per box (1 if not divisible)</div>
+              <div className="hint-inline" title="Use 1 if this product isn't split — a box is a box, a bottle is a bottle.">
+                Pieces/box
+              </div>
               <input
                 type="number"
                 value={newLine.qty_per_set}
@@ -449,7 +461,7 @@ export default function PlannedGwpDetail({ profile, isNew }) {
               />
             </div>
             <div>
-              <div className="hint-inline">Requested qty (boxes/sets)</div>
+              <div className="hint-inline">Requested (sets)</div>
               <input
                 type="number"
                 value={newLine.requested_qty_sets}
@@ -461,8 +473,8 @@ export default function PlannedGwpDetail({ profile, isNew }) {
           </div>
           <div className="hint" style={{ marginBottom: '8px' }}>
             {(Number(newLine.qty_per_set) || 0) * (Number(newLine.requested_qty_sets) || 0)} total
-            pieces for DSP/Warehouse to prepare — use 1 sachet/piece per box for products that
-            aren't split (a box is a box, a bottle is a bottle).
+            pieces for DSP/Logistic to prepare — use 1 piece per box for products that aren't
+            split (a box is a box, a bottle is a bottle).
           </div>
           <div className="action-row" style={{ justifyContent: 'flex-end' }}>
             <button className="btn" onClick={() => setAddingLine(false)}>
@@ -481,7 +493,7 @@ export default function PlannedGwpDetail({ profile, isNew }) {
 
       <fieldset disabled={!isDSPorWarehouse} className="section" style={{ marginTop: '1.5rem' }}>
         <legend>
-          Stock prep scheduling <span className="role-tag">DSP / Warehouse / Logistics</span>
+          Stock prep scheduling <span className="role-tag">DSP / Logistic</span>
         </legend>
         <div className="grid">
           <div>
